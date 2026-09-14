@@ -173,7 +173,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
       // Gunakan format pemanggilan standar SDK @google/genai terbaru
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash', 
+        model: 'gemini-3.6-flash', 
         contents: [
           ...sanitizedHistory,
           {
