@@ -270,12 +270,12 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
     if (error.status === 503) {
       return res.status(503).json({
-        error: "Server pemrosesan gambar sedang penuh (High Demand). Silakan tunggu 1-2 menit."
+        error: "Server pemrosesan gambar sedang penuh. Silakan coba lagi."
       });
     }
     
-    // Kirim pesan error asli agar terlihat jelas di frontend
-    res.status(500).json({ error: `Backend Error: ${error.message}` });
+    // INI AKAN MENAMPILKAN ERROR ASLI KE CHAT SUPAYA KITA TAHU PENYEBABNYA
+    res.status(500).json({ error: `DEBUG ERROR: ${error.message || JSON.stringify(error)}` });
   }
 });
 
