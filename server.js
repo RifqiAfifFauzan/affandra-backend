@@ -53,14 +53,16 @@ const pdfParse = require('pdf-parse');
 
 const app = express();
 
-// Longgarkan CORS agar APK di HP & web bisa terhubung tanpa blokir
+// Longgarkan CORS dan atur limit body parser agar muat file gambar
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Inisialisasi DUA Mesin AI sekaligus!
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Konfigurasi Multer menggunakan memoryStorage (AMAN untuk Vercel Serverless)
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 } // Limit 5 MB
@@ -159,19 +161,31 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
     let aiReply = "";
     let sisaLimit = null;
 
-    // --- LOGIKA 1: JIKA ADA GAMBAR (Gunakan Mata Gemini) ---
+// --- LOGIKA 1: JIKA ADA GAMBAR (Gunakan Mata Gemini) ---
     if (file && file.mimetype.startsWith('image/')) {
       const base64Image = file.buffer.toString('base64');
       
+      // Sanitasi riwayat pesan
+      const sanitizedHistory = parsedHistory.map(msg => ({
+        role: msg.role === 'model' || msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.parts?.[0]?.text || msg.content || '' }]
+      })).slice(-4);
+
+      // Gunakan format pemanggilan standar SDK @google/genai terbaru
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash', 
+        model: 'gemini-1.5-flash',
         contents: [
-          ...parsedHistory,
+          ...sanitizedHistory,
           {
             role: 'user',
             parts: [
               { text: message || "Tolong jelaskan gambar ini secara detail." },
-              { inlineData: { data: base64Image, mimeType: file.mimetype } }
+              {
+                inlineData: {
+                  data: base64Image,
+                  mimeType: file.mimetype
+                }
+              }
             ]
           }
         ],
@@ -180,14 +194,14 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         }
       });
       
-      aiReply = response.text;
+      aiReply = response.text || "Maaf, aku tidak bisa membaca gambar tersebut.";
     }
     
     // --- LOGIKA 2: JIKA TEKS BIASA ATAU FILE PDF (Gunakan Otak Groq) ---
     else {
       const formattedHistory = parsedHistory.map(msg => ({
-        role: msg.role === 'model' ? 'assistant' : 'user',
-        content: msg.parts[0].text
+        role: msg.role === 'model' || msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.parts?.[0]?.text || msg.content || ''
       }));
 
       const limitedHistory = formattedHistory.slice(-10);
@@ -234,7 +248,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
       await pool.query(
         'INSERT INTO messages (session_id, role, content) VALUES ($1, $2, $3)',
-        [sessionId, 'user', message]
+        [sessionId, 'user', message || "[Mengirim Lampiran File/Gambar]"]
       );
 
       await pool.query(
@@ -245,25 +259,23 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
     res.json({ reply: aiReply, limit: sisaLimit });
 
-  } catch (error) {
-    console.error("Error pada server:", error);
+} catch (error) {
+    console.error("DETAIL ERROR PADA SERVER:", error);
     
     if (error.status === 429) {
-      const waktuReset = new Date(Date.now() + 60 * 1000); 
-      const tanggal = waktuReset.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
-      const jam = waktuReset.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
       return res.status(429).json({ 
-        error: `Pesanmu sudah limit. Silakan coba lagi pada tanggal ${tanggal} jam ${jam} WIB.` 
+        error: `Pesanmu sudah limit. Silakan coba beberapa saat lagi.` 
       });
     }
 
     if (error.status === 503) {
       return res.status(503).json({
-        error: "Server pemrosesan gambar sedang penuh (High Demand). Silakan tunggu 1-2 menit dan coba kirim ulang gambarnya."
+        error: "Server pemrosesan gambar sedang penuh (High Demand). Silakan tunggu 1-2 menit."
       });
     }
     
-    res.status(500).json({ error: "Terjadi kesalahan pada sistem hybrid Affandra." });
+    // Kirim pesan error asli agar terlihat jelas di frontend
+    res.status(500).json({ error: `Backend Error: ${error.message}` });
   }
 });
 
