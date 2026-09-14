@@ -168,7 +168,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         parts: [{ text: msg.parts?.[0]?.text || msg.content || '' }]
       })).slice(-4);
 
-      // Gunakan format pemanggilan standar SDK @google/genai terbaru
+// Gunakan format pemanggilan standar SDK @google/genai terbaru dengan Google Search Grounding
       const response = await ai.models.generateContent({
         model: 'gemini-3.6-flash', 
         contents: [
@@ -187,7 +187,8 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
           }
         ],
         config: {
-          systemInstruction: systemPromptRifqi
+          systemInstruction: systemPromptRifqi,
+          tools: [{ googleSearch: {} }] // <-- INI YANG MEMBUAT AFFANDRA BISA BROWSING GOOGLE
         }
       });
       
