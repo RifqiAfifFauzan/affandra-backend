@@ -262,19 +262,25 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 } catch (error) {
     console.error("DETAIL ERROR PADA SERVER:", error);
     
+    // Jika diblokir oleh filter keamanan AI (topik sensitif/politik)
+    if (error.status === 400 || (error.message && error.message.includes('safety'))) {
+      return res.status(200).json({ 
+        reply: "Bjir jangan nanya kek gitu gilak, jangan ngadi ngadi dah nanti gw yang disalahin" 
+      });
+    }
+
     if (error.status === 429) {
       return res.status(429).json({ 
-        error: `Pesanmu sudah limit. Silakan coba beberapa saat lagi.` 
+        error: `Pesan lu dah limit wkwkwk, nanti ye coba lagi` 
       });
     }
 
     if (error.status === 503) {
       return res.status(503).json({
-        error: "Server pemrosesan gambar sedang penuh. Silakan coba lagi."
+        error: "Server yang nampung gambar lagi kaga bisa nih, ntar aja yak"
       });
     }
     
-    // INI AKAN MENAMPILKAN ERROR ASLI KE CHAT SUPAYA KITA TAHU PENYEBABNYA
     res.status(500).json({ error: `DEBUG ERROR: ${error.message || JSON.stringify(error)}` });
   }
 });
