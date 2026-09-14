@@ -272,7 +272,13 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
   }
 });
 
-const PORT = 3001;
-app.listen(PORT, () => {
-  console.log(`Server Affandra berjalan di http://localhost:${PORT}`);
-});
+// Jalankan secara lokal jika bukan di server Vercel
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`Server lokal berjalan di port ${PORT}`);
+  });
+}
+
+// Wajib diekspor agar bisa dibaca oleh Vercel Serverless Function
+module.exports = app;
