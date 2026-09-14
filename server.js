@@ -6,12 +6,12 @@ import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
 import pg from 'pg';
 
-// 1. WAJIB DI SINI: Panggil dotenv sebelum memanggil yang lain!
+// 1. Panggil dotenv sebelum memanggil yang lain
 dotenv.config();
 
 const { Pool } = pg;
 
-// 2. Sekarang proses pembacaan DATABASE_URL pasti berhasil
+// 2. Koneksi pool PostgreSQL (Supabase)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -19,15 +19,15 @@ const pool = new Pool({
   }
 });
 
-// Fungsi untuk inisialisasi tabel database
+// Fungsi untuk inisialisasi tabel database (dengan kolom lengkap)
 async function initDB() {
   try {
-    // HAPUS BARIS "DROP TABLE..." YANG ADA DI SINI SEBELUMNYA!
-    
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sessions (
         id VARCHAR(255) PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
+        user_id VARCHAR(255),
+        creation_time_ms BIGINT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -44,7 +44,7 @@ async function initDB() {
     console.error("❌ Gagal menghubungi PostgreSQL:", error.message);
   }
 }
-initDB(); // Jalankan saat server menyala
+initDB();
 
 // Solusi untuk mengimpor modul CommonJS (pdf-parse) ke ESM
 import { createRequire } from 'module';
@@ -52,9 +52,9 @@ const require = createRequire(import.meta.url);
 const pdfParse = require('pdf-parse');
 
 const app = express();
-app.use(cors({
-  origin: 'http://localhost:5173' // Hanya izinkan frontend milikmu
-}));
+
+// Longgarkan CORS agar APK di HP & web bisa terhubung tanpa blokir
+app.use(cors());
 app.use(express.json());
 
 // Inisialisasi DUA Mesin AI sekaligus!
@@ -74,7 +74,6 @@ app.get('/', (req, res) => {
 app.get('/api/sessions', async (req, res) => {
   const { userId } = req.query;
   try {
-    // Contoh query SQL PostgreSQL
     const result = await pool.query(
       'SELECT * FROM sessions WHERE user_id = $1 ORDER BY creation_time_ms DESC',
       [userId]
@@ -112,7 +111,6 @@ app.put('/api/sessions/:id', async (req, res) => {
 app.delete('/api/sessions/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    // Berkat 'ON DELETE CASCADE' di skema tabel, pesan di dalamnya akan otomatis ikut terhapus!
     await pool.query('DELETE FROM sessions WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
@@ -161,12 +159,12 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
     let aiReply = "";
     let sisaLimit = null;
 
-// --- LOGIKA 1: JIKA ADA GAMBAR (Gunakan Mata Gemini) ---
+    // --- LOGIKA 1: JIKA ADA GAMBAR (Gunakan Mata Gemini) ---
     if (file && file.mimetype.startsWith('image/')) {
       const base64Image = file.buffer.toString('base64');
       
-    const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite', // ⬅️ Ganti ke Flash Lite agar kuotanya 500/hari
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash', 
         contents: [
           ...parsedHistory,
           {
@@ -197,7 +195,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
       const messages = [
         {
           role: "system",
-          // MENGGUNAKAN PROMPT BARU
           content: systemPromptRifqi
         },
         ...limitedHistory
@@ -245,9 +242,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         [sessionId, 'model', aiReply]
       );
     }
-    // -------------------------------------
 
-    // Kembalikan jawaban beserta informasi limit ke frontend
     res.json({ reply: aiReply, limit: sisaLimit });
 
   } catch (error) {
